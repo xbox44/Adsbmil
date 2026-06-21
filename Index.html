@@ -1,0 +1,116 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Military ADS-B Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin:0; padding:0; font-family: -apple-system, sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        .leaflet-popup-content { font-size: 14px; }
+        .refresh-btn {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            padding: 10px 15px; background: #fff; border: 2px solid #007aff; border-radius: 8px;
+            cursor: pointer; font-weight: bold;
+        }
+        .status { position: absolute; top: 60px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button class="refresh-btn" onclick="fetchMilitaryData()">Refresh Now</button>
+    <div class="status" id="status">Loading military aircraft...</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/bbecquet/Leaflet.RotatedMarker/leaflet.rotatedMarker.js"></script>
+
+    <script>
+        const map = L.map('map').setView([39.5, -84.0], 6); // Slightly zoomed out for Ohio visibility
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        let aircraftLayer = L.layerGroup().addTo(map);
+        let markers = {};
+
+        async function fetchMilitaryData() {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Fetching military data...';
+            try {
+                // Primary military endpoint
+                let response = await fetch('https://api.adsb.lol/v2/mil');
+                if (!response.ok) throw new Error('Network response not OK');
+                const data = await response.json();
+
+                console.log(`Received ${data.ac ? data.ac.length : 0} military aircraft`);
+
+                if (!data.ac || data.ac.length === 0) {
+                    statusEl.textContent = 'No military aircraft data right now';
+                    return;
+                }
+
+                const currentHexes = new Set(data.ac.map(ac => ac.hex));
+
+                // Remove old markers
+                Object.keys(markers).forEach(hex => {
+                    if (!currentHexes.has(hex)) {
+                        markers[hex].remove();
+                        delete markers[hex];
+                    }
+                });
+
+                let added = 0;
+                data.ac.forEach(ac => {
+                    const { hex, lat, lon, track = 0, gs, alt_baro, r, t, callsign, type } = ac;
+                    if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
+
+                    const iconHtml = `<div style="transform: rotate(${track}deg); font-size: 28px; text-shadow: 0 0 3px white;">✈️</div>`;
+                    const icon = L.divIcon({
+                        className: 'custom-plane-icon',
+                        html: iconHtml,
+                        iconSize: [36, 36],
+                        iconAnchor: [18, 18]
+                    });
+
+                    let marker = markers[hex];
+                    if (!marker) {
+                        marker = L.marker([lat, lon], { 
+                            icon: icon,
+                            rotationAngle: track,
+                            rotationOrigin: 'center center'
+                        }).addTo(aircraftLayer);
+                        markers[hex] = marker;
+                        added++;
+                    } else {
+                        marker.setLatLng([lat, lon]);
+                        if (marker.setRotationAngle) marker.setRotationAngle(track);
+                    }
+
+                    const popupContent = `
+                        <b>${callsign || 'N/A'}</b><br>
+                        Hex: ${hex}<br>
+                        Reg: ${r || 'N/A'}<br>
+                        Type: ${t || type || 'N/A'}<br>
+                        Alt: ${alt_baro || 'N/A'} ft<br>
+                        Speed: ${gs || 'N/A'} kts<br>
+                        Heading: ${Math.round(track)}°
+                    `;
+                    marker.bindPopup(popupContent);
+                });
+
+                statusEl.textContent = `Updated ${added} new aircraft | Total visible: ${Object.keys(markers).length}`;
+                console.log('Map updated successfully');
+            } catch (err) {
+                console.error("Fetch error:", err);
+                statusEl.textContent = 'Error fetching data';
+                alert('Fetch failed: ' + err.message + '\nCheck console (Safari Web Inspector) or internet.');
+            }
+        }
+
+        // Auto-refresh
+        setInterval(fetchMilitaryData, 15000); // 15 seconds
+        fetchMilitaryData(); // Initial
+    </script>
+</body>
+</html>
