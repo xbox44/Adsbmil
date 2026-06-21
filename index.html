@@ -42,18 +42,20 @@
         <button class="refresh-btn" onclick="fetchData()">Refresh Now</button>
         <label>
             <input type="checkbox" id="militaryOnly" checked onchange="fetchData()">
-            Show Only Military Aircraft
+            Show Only Military
         </label>
     </div>
-    <div class="status" id="status">Loading aircraft data...</div>
+    <div class="status" id="status">Loading map and aircraft...</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/bbecquet/Leaflet.RotatedMarker/leaflet.rotatedMarker.js"></script>
 
     <script>
-        const map = L.map('map', { zoomControl: true }).setView([39.5, -84.0], 5);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
+        const map = L.map('map', { zoomControl: true }).setView([39.5, -84.0], 6); // Ohio area
+        
+        L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/terrain/{z}/{x}/{y}.jpg', {
+            attribution: 'Map tiles by Stamen Design',
+            maxZoom: 18
         }).addTo(map);
 
         let aircraftLayer = L.layerGroup().addTo(map);
@@ -62,19 +64,19 @@
         async function fetchData() {
             const statusEl = document.getElementById('status');
             const militaryOnly = document.getElementById('militaryOnly').checked;
-            statusEl.textContent = militaryOnly ? 'Fetching military aircraft...' : 'Fetching all aircraft...';
+            statusEl.textContent = 'Fetching aircraft...';
             
             try {
-                const response = await fetch('https://api.adsb.lol/v2/all');
+                // ADS-B Exchange style point query via public compatible API
+                const response = await fetch('https://api.adsb.one/v2/point/39.5/-84.0/300');
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
 
                 const aircraft = data.ac || [];
-                console.log(`Total aircraft received: ${aircraft.length}`);
+                console.log(`Aircraft received: ${aircraft.length}`);
 
                 const currentHexes = new Set(aircraft.map(ac => ac.hex));
 
-                // Remove stale markers
                 Object.keys(markers).forEach(hex => {
                     if (!currentHexes.has(hex)) {
                         markers[hex].remove();
@@ -89,7 +91,6 @@
                     const lon = ac.lon;
                     if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
 
-                    // Military filter (dbFlags bit 1)
                     const isMilitary = !!(ac.dbFlags && (ac.dbFlags & 1));
                     if (militaryOnly && !isMilitary) return;
 
@@ -129,21 +130,19 @@
                         Type: ${type}<br>
                         Alt: ${alt} ft<br>
                         Speed: ${gs} kts<br>
-                        Heading: ${Math.round(track)}°<br>
-                        Military: ${isMilitary ? 'Yes' : 'No'}
+                        Military: ${isMilitary ? '✅ Yes' : 'No'}
                     `);
                 });
 
-                statusEl.textContent = `${militaryOnly ? 'Military' : 'All'} | Updated ${added} | Visible: ${Object.keys(markers).length}`;
+                statusEl.textContent = `${militaryOnly ? 'Military' : 'All'} | Visible: ${Object.keys(markers).length}`;
             } catch (err) {
                 console.error('Fetch error:', err);
-                statusEl.textContent = 'Error fetching data – check connection';
+                statusEl.textContent = 'Error – check connection/console';
             }
         }
 
-        // Auto refresh every 15s
         setInterval(fetchData, 15000);
-        fetchData(); // Initial load
+        fetchData(); // Initial
     </script>
 </body>
 </html>
