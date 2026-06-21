@@ -19,7 +19,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        const map = L.map('map').setView([39.5, -84.0], 7); // Ohio area
+        const map = L.map('map').setView([39.5, -84.0], 7); // Ohio centered
         
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
@@ -31,9 +31,9 @@
             const statusEl = document.getElementById('status');
             statusEl.textContent = 'Fetching aircraft...';
             try {
-                // Bounding box query for Midwest/Ohio area + in-air flights
-                const bboxQuery = encodeURIComponent('{range lat 35 45} {range lon -90 -75} {true inAir}');
-                const url = `https://aeroapi.flightaware.com/aeroapi/flights/search/positions?query=${bboxQuery}`;
+                // Proper bounding box query for Midwest area + in-air flights
+                const query = encodeURIComponent('{range lat 35 45} {range lon -90 -75} {true inAir}');
+                const url = `https://aeroapi.flightaware.com/aeroapi/flights/search/positions?query=${query}&max_pages=1`;
                 
                 const response = await fetch(url, {
                     headers: {
@@ -41,20 +41,16 @@
                     }
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 
                 const data = await response.json();
                 console.log('Full API response:', data);
                 
-                const aircraft = data.positions || data.flights || data.results || [];
+                const aircraft = data.positions || [];
                 console.log(`Total aircraft received: ${aircraft.length}`);
 
                 // Clear old markers
-                Object.keys(markers).forEach(key => {
-                    markers[key].remove();
-                });
+                Object.keys(markers).forEach(key => markers[key].remove());
                 markers = {};
 
                 aircraft.forEach((ac, index) => {
@@ -63,7 +59,7 @@
                     if (!lat || !lon) return;
 
                     const track = ac.heading || ac.track || 0;
-                    const callsign = ac.ident || ac.callsign || ac.flight || 'N/A';
+                    const callsign = ac.ident || ac.callsign || 'N/A';
 
                     const iconHtml = `<div style="transform:rotate(${track}deg); font-size:28px;">✈️</div>`;
                     const icon = L.divIcon({
@@ -73,19 +69,20 @@
                     });
 
                     const marker = L.marker([lat, lon], { icon }).addTo(map);
-                    markers[index] = marker; // Simple unique key
+                    markers[index] = marker;
 
                     marker.bindPopup(`
                         <b>${callsign}</b><br>
-                        Alt: ${ac.altitude || ac.alt_baro || 'N/A'} ft<br>
-                        Speed: ${ac.groundspeed || ac.gs || 'N/A'} kts
+                        Alt: ${ac.altitude || 'N/A'} ft<br>
+                        Speed: ${ac.groundspeed || 'N/A'} kts<br>
+                        Heading: ${Math.round(track)}°
                     `);
                 });
 
                 statusEl.textContent = `Visible: ${aircraft.length} aircraft`;
             } catch (e) {
                 console.error('Fetch error:', e);
-                statusEl.textContent = 'Error — check console for details';
+                statusEl.textContent = 'Error — check console';
             }
         }
 
