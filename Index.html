@@ -1,32 +1,51 @@
-<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
     <title>Military ADS-B Tracker</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/manifest+json,{
+      %22name%22:%22Military%20Tracker%22,
+      %22short_name%22:%22MilTrack%22,
+      %22start_url%22:%22.%22,
+      %22display%22:%22standalone%22,
+      %22background_color%22:%22%23000000%22,
+      %22theme_color%22:%22%23000000%22,
+      %22icons%22:[{
+        %22src%22:%22https://via.placeholder.com/192x192/000/fff?text=%E2%9C%88%EF%B8%8F%22,
+        %22sizes%22:%22192x192%22,
+        %22type%22:%22image/png%22
+      }]
+    }">
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin:0; padding:0; font-family: -apple-system, sans-serif; }
+        body { margin:0; padding:0; font-family: -apple-system, sans-serif; background:#000; }
         #map { height: 100vh; width: 100vw; }
-        .leaflet-popup-content { font-size: 14px; }
         .refresh-btn {
-            position: absolute; top: 10px; left: 10px; z-index: 1000;
-            padding: 10px 15px; background: #fff; border: 2px solid #007aff; border-radius: 8px;
-            cursor: pointer; font-weight: bold;
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            padding: 12px 18px; background: rgba(0,122,255,0.9); color: white;
+            border: none; border-radius: 12px; font-weight: bold; cursor: pointer;
         }
-        .status { position: absolute; top: 60px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 5px 10px; border-radius: 4px; font-size: 12px; }
+        .status { position: absolute; top: 80px; left: 20px; z-index: 1000; 
+            background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 8px; font-size: 13px; }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <button class="refresh-btn" onclick="fetchMilitaryData()">Refresh Now</button>
+    <button class="refresh-btn" onclick="fetchMilitaryData()">Refresh</button>
     <div class="status" id="status">Loading military aircraft...</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/bbecquet/Leaflet.RotatedMarker/leaflet.rotatedMarker.js"></script>
 
     <script>
-        const map = L.map('map').setView([39.5, -84.0], 6); // Slightly zoomed out for Ohio visibility
+        const map = L.map('map', { zoomControl: true }).setView([39.5, -84.0], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
@@ -36,23 +55,20 @@
 
         async function fetchMilitaryData() {
             const statusEl = document.getElementById('status');
-            statusEl.textContent = 'Fetching military data...';
+            statusEl.textContent = 'Fetching...';
             try {
-                // Primary military endpoint
-                let response = await fetch('https://api.adsb.lol/v2/mil');
-                if (!response.ok) throw new Error('Network response not OK');
+                const response = await fetch('https://api.adsb.lol/v2/mil');
+                if (!response.ok) throw new Error('Network error');
                 const data = await response.json();
 
-                console.log(`Received ${data.ac ? data.ac.length : 0} military aircraft`);
+                console.log(`Military aircraft: ${data.ac ? data.ac.length : 0}`);
 
                 if (!data.ac || data.ac.length === 0) {
-                    statusEl.textContent = 'No military aircraft data right now';
+                    statusEl.textContent = 'No aircraft visible right now';
                     return;
                 }
 
                 const currentHexes = new Set(data.ac.map(ac => ac.hex));
-
-                // Remove old markers
                 Object.keys(markers).forEach(hex => {
                     if (!currentHexes.has(hex)) {
                         markers[hex].remove();
@@ -62,24 +78,16 @@
 
                 let added = 0;
                 data.ac.forEach(ac => {
-                    const { hex, lat, lon, track = 0, gs, alt_baro, r, t, callsign, type } = ac;
-                    if (!lat || !lon || isNaN(lat) || isNaN(lon)) return;
+                    const { hex, lat, lon, track = 0, gs, alt_baro, r, t, callsign } = ac;
+                    if (!lat || !lon) return;
 
-                    const iconHtml = `<div style="transform: rotate(${track}deg); font-size: 28px; text-shadow: 0 0 3px white;">✈️</div>`;
-                    const icon = L.divIcon({
-                        className: 'custom-plane-icon',
-                        html: iconHtml,
-                        iconSize: [36, 36],
-                        iconAnchor: [18, 18]
-                    });
+                    const iconHtml = `<div style="transform:rotate(${track}deg);font-size:32px;text-shadow:0 0 4px white;">✈️</div>`;
+                    const icon = L.divIcon({ className: '', html: iconHtml, iconSize: [40,40], iconAnchor: [20,20] });
 
                     let marker = markers[hex];
                     if (!marker) {
-                        marker = L.marker([lat, lon], { 
-                            icon: icon,
-                            rotationAngle: track,
-                            rotationOrigin: 'center center'
-                        }).addTo(aircraftLayer);
+                        marker = L.marker([lat, lon], { icon: icon, rotationAngle: track, rotationOrigin: 'center center' })
+                            .addTo(aircraftLayer);
                         markers[hex] = marker;
                         added++;
                     } else {
@@ -87,30 +95,25 @@
                         if (marker.setRotationAngle) marker.setRotationAngle(track);
                     }
 
-                    const popupContent = `
+                    marker.bindPopup(`
                         <b>${callsign || 'N/A'}</b><br>
                         Hex: ${hex}<br>
-                        Reg: ${r || 'N/A'}<br>
-                        Type: ${t || type || 'N/A'}<br>
+                        Type: ${t || 'N/A'}<br>
                         Alt: ${alt_baro || 'N/A'} ft<br>
                         Speed: ${gs || 'N/A'} kts<br>
                         Heading: ${Math.round(track)}°
-                    `;
-                    marker.bindPopup(popupContent);
+                    `);
                 });
 
-                statusEl.textContent = `Updated ${added} new aircraft | Total visible: ${Object.keys(markers).length}`;
-                console.log('Map updated successfully');
+                statusEl.textContent = `Updated | ${Object.keys(markers).length} visible`;
             } catch (err) {
-                console.error("Fetch error:", err);
-                statusEl.textContent = 'Error fetching data';
-                alert('Fetch failed: ' + err.message + '\nCheck console (Safari Web Inspector) or internet.');
+                console.error(err);
+                statusEl.textContent = 'Error – check connection';
             }
         }
 
-        // Auto-refresh
-        setInterval(fetchMilitaryData, 15000); // 15 seconds
-        fetchMilitaryData(); // Initial
+        setInterval(fetchMilitaryData, 15000);
+        fetchMilitaryData();
     </script>
 </body>
 </html>
