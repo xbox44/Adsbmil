@@ -28,10 +28,14 @@
         let markers = {};
 
         async function fetchAircraft() {
-            document.getElementById('status').textContent = 'Fetching aircraft...';
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Fetching aircraft...';
             try {
-                // FlightAware AeroAPI - search positions in bounding box around Ohio
-                const response = await fetch('https://aeroapi.flightaware.com/aeroapi/flights/search/positions?query={true inAir}&max_pages=2', {
+                // Bounding box query for Midwest/Ohio area + in-air flights
+                const bboxQuery = encodeURIComponent('{range lat 35 45} {range lon -90 -75} {true inAir}');
+                const url = `https://aeroapi.flightaware.com/aeroapi/flights/search/positions?query=${bboxQuery}`;
+                
+                const response = await fetch(url, {
                     headers: {
                         'x-apikey': 'xZAjHVhmzVTT1AlGPjlbAsGWMaJWTnx0'
                     }
@@ -42,19 +46,24 @@
                 }
                 
                 const data = await response.json();
-                const aircraft = data.positions || data.flights || [];  // Adjust based on actual response
-                console.log(`Total aircraft received:`, aircraft.length, data);
+                console.log('Full API response:', data);
+                
+                const aircraft = data.positions || data.flights || data.results || [];
+                console.log(`Total aircraft received: ${aircraft.length}`);
 
-                // Clear old markers not in new data (basic cleanup)
-                Object.keys(markers).forEach(hex => markers[hex].remove());
+                // Clear old markers
+                Object.keys(markers).forEach(key => {
+                    markers[key].remove();
+                });
+                markers = {};
 
-                aircraft.forEach(ac => {
-                    if (!ac.latitude || !ac.longitude) return;
+                aircraft.forEach((ac, index) => {
+                    const lat = ac.latitude || ac.lat;
+                    const lon = ac.longitude || ac.lon;
+                    if (!lat || !lon) return;
 
-                    const lat = ac.latitude;
-                    const lon = ac.longitude;
                     const track = ac.heading || ac.track || 0;
-                    const callsign = ac.ident || ac.callsign || 'N/A';
+                    const callsign = ac.ident || ac.callsign || ac.flight || 'N/A';
 
                     const iconHtml = `<div style="transform:rotate(${track}deg); font-size:28px;">✈️</div>`;
                     const icon = L.divIcon({
@@ -63,24 +72,24 @@
                         iconAnchor: [18, 18]
                     });
 
-                    let marker = L.marker([lat, lon], { icon }).addTo(map);
-                    markers[ac.ident || Math.random()] = marker;  // Simple key
+                    const marker = L.marker([lat, lon], { icon }).addTo(map);
+                    markers[index] = marker; // Simple unique key
 
                     marker.bindPopup(`
                         <b>${callsign}</b><br>
-                        Alt: ${ac.altitude || 'N/A'} ft<br>
-                        Speed: ${ac.groundspeed || 'N/A'} kts
+                        Alt: ${ac.altitude || ac.alt_baro || 'N/A'} ft<br>
+                        Speed: ${ac.groundspeed || ac.gs || 'N/A'} kts
                     `);
                 });
 
-                document.getElementById('status').textContent = `Visible: ${aircraft.length} aircraft`;
+                statusEl.textContent = `Visible: ${aircraft.length} aircraft`;
             } catch (e) {
-                console.error(e);
-                document.getElementById('status').textContent = 'Error — check console for details';
+                console.error('Fetch error:', e);
+                statusEl.textContent = 'Error — check console for details';
             }
         }
 
-        setInterval(fetchAircraft, 20000); // 20s to respect rate limits
+        setInterval(fetchAircraft, 20000);
         fetchAircraft();
     </script>
 </body>
